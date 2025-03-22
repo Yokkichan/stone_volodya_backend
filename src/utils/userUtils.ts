@@ -34,7 +34,6 @@ export const updateUserAndCache = async (
 };
 
 export const sendUserResponse = (user: IUser) => {
-    console.log("[sendUserResponse] User data:", user); // Добавляем лог для отладки
     return {
         telegramId: user.telegramId,
         username: user.username,

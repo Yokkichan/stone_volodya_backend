@@ -10,15 +10,15 @@ import gameRoutes from "./routes/game";
 import leaderboardRoutes from "./routes/leaderboard";
 import airdropRoutes from "./routes/airdrop";
 import referralRoutes from "./routes/referral";
-import earnRoutes from "./routes/earn"; // Добавляем роуты для Earn
+import earnRoutes from "./routes/earn";
 import "./bot";
-import { getLeagueByStones, updateUserAndCache } from "./utils/userUtils";
+import { getLeagueByStones, updateUserAndCache, sendUserResponse } from "./utils/userUtils";
 
 dotenv.config();
 
 const app = express();
 const server = createServer(app);
-const io = new Server(server, {
+export const io = new Server(server, {
     cors: { origin: "*" },
     pingTimeout: 60000,
     pingInterval: 25000,
@@ -29,22 +29,15 @@ const activeConnections = new Map<string, string>();
 
 app.use(cors());
 app.use(express.json());
-app.use((req, res, next) => {
-    console.log(`Received request: ${req.method} ${req.url}`);
-    next();
-});
-
 app.use("/api/auth", authRoutes);
 app.use("/api/user", userRoutes);
 app.use("/api/game", gameRoutes);
 app.use("/api/leaderboard", leaderboardRoutes);
 app.use("/api/airdrop", airdropRoutes);
 app.use("/api/referral", referralRoutes);
-app.use("/api/earn", earnRoutes); // Подключаем роуты для Earn
+app.use("/api/earn", earnRoutes);
 
 io.on("connection", (socket) => {
-    console.log("User connected:", socket.id);
-
     let hasJoined = false;
 
     socket.on("join", async (telegramId: string) => {
@@ -61,12 +54,27 @@ io.on("connection", (socket) => {
 
         const user = await mongoose.model("User").findOne({ telegramId });
         if (user) {
-            await updateUserAndCache(user, userCache);
-            io.to(telegramId).emit("userUpdate", {
+            console.log(`User logged in: ${user.username}`); // Лог ника при входе
+            const cachedUser = userCache.get(telegramId) || {
                 stones: user.stones,
-                league: user.league,
+                autoStonesPerSecond: user.autoStonesPerSecond,
                 lastAutoBotUpdate: user.lastAutoBotUpdate,
-            });
+                league: user.league,
+            };
+
+            const now = new Date();
+            const timeDiff = Math.floor((now.getTime() - cachedUser.lastAutoBotUpdate.getTime()) / 1000);
+            if (cachedUser.autoStonesPerSecond > 0 && timeDiff > 0) {
+                const offlineStones = Math.floor(cachedUser.autoStonesPerSecond * timeDiff);
+                cachedUser.stones += offlineStones;
+                cachedUser.lastAutoBotUpdate = now;
+                user.stones = cachedUser.stones;
+                user.lastAutoBotUpdate = now;
+                await user.save();
+            }
+
+            await updateUserAndCache(user, userCache);
+            io.to(telegramId).emit("userUpdate", sendUserResponse(user));
         }
     });
 
@@ -76,7 +84,6 @@ io.on("connection", (socket) => {
     });
 
     socket.on("disconnect", async () => {
-        console.log("User disconnected:", socket.id);
         for (const [telegramId, socketId] of activeConnections.entries()) {
             if (socketId === socket.id) {
                 const user = await mongoose.model("User").findOne({ telegramId });
@@ -98,31 +105,41 @@ io.on("connection", (socket) => {
     });
 });
 
+// Обновление автобота каждую секунду для активных пользователей
 setInterval(async () => {
-    console.log("[Cache Sync] Syncing user cache to database");
-    const updates = Array.from(userCache.entries()).map(([telegramId, cachedUser]) => ({
-        updateOne: {
-            filter: { telegramId },
-            update: { $set: { stones: cachedUser.stones, league: cachedUser.league, lastAutoBotUpdate: cachedUser.lastAutoBotUpdate } },
-        },
-    }));
+    const now = new Date();
+    for (const [telegramId, cachedUser] of userCache.entries()) {
+        if (cachedUser.autoStonesPerSecond > 0) {
+            const timeDiff = Math.floor((now.getTime() - cachedUser.lastAutoBotUpdate.getTime()) / 1000);
+            if (timeDiff > 0) {
+                const newStones = Math.floor(cachedUser.autoStonesPerSecond * timeDiff);
+                cachedUser.stones += newStones;
+                cachedUser.lastAutoBotUpdate = now;
+                userCache.set(telegramId, cachedUser);
 
-    if (updates.length > 0) {
-        await mongoose.model("User").bulkWrite(updates);
-        console.log(`[Cache Sync] Updated ${updates.length} users in database`);
+                const user = await mongoose.model("User").findOne({ telegramId });
+                if (user) {
+                    user.stones = cachedUser.stones;
+                    user.lastAutoBotUpdate = now;
+                    await user.save();
+                    io.to(telegramId).emit("userUpdate", sendUserResponse(user));
+                }
+            }
+        }
     }
-}, 60 * 1000);
+}, 1000);
+
+// Лог количества онлайн-пользователей каждые 30 минут
+setInterval(() => {
+    const onlineCount = activeConnections.size;
+    console.log(`Online users: ${onlineCount}`);
+}, 30 * 60 * 1000); // 30 минут в миллисекундах
 
 const start = async () => {
     try {
         await mongoose.connect(process.env.MONGO_URI!);
-        console.log("Connected to MongoDB");
-        server.listen(process.env.PORT || 3000, () => {
-            console.log(`Server running on port ${process.env.PORT || 3000}`);
-        });
-    } catch (error) {
-        console.error("Error starting server:", error);
-    }
+        server.listen(process.env.PORT || 3000, () => {});
+    } catch (error) {}
 };
 
 start();
