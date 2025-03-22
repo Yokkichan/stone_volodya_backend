@@ -1,0 +1,14 @@
+{
+  "compilerOptions": {
+    "rootDir": ".", // Указываем корень проекта
+    "outDir": "./dist", // Папка для скомпилированных файлов
+    "target": "es6",
+    "module": "commonjs",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true
+  },
+  "include": ["src/**/*", "bot.ts"], // Включаем bot.ts
+  "exclude": ["node_modules"]
+}
