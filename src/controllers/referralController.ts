@@ -8,7 +8,7 @@ interface Friend {
     photo_url: string;
 }
 
-export const getReferralFriends = async (telegramId: string): Promise<{ invitedFriends: Friend[]; bonus: number; totalBonus: number }> => {
+export const getReferralFriends = async (telegramId: string): Promise<{ invitedFriends: Friend[]; totalBonus: number }> => {
     const user = await User.findOne({ telegramId }).populate<{ invitedFriends: { user: any; lastReferralStones: number }[] }>("invitedFriends.user");
     if (!user) {
         throw new Error("User not found");
@@ -36,13 +36,7 @@ export const getReferralFriends = async (telegramId: string): Promise<{ invitedF
 
     console.log("[getReferralFriends] Friends data:", friendsData);
 
-    let baseBonus = 0;
-    friendsData.forEach((friend) => {
-        const bonus = friend.isPremium ? 10000 : 1000;
-        baseBonus += bonus;
-    });
+    const totalBonus = user.referralBonus || 0;
 
-    const totalBonus = (user.referralBonus || 0) + baseBonus;
-
-    return { invitedFriends: friendsData, bonus: baseBonus, totalBonus };
+    return { invitedFriends: friendsData, totalBonus };
 };
