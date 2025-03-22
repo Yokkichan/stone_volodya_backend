@@ -1,4 +1,3 @@
-// src/utils/userUtils.ts
 import { Document } from "mongoose";
 import User, { IUser } from "../models/User";
 import { userCache } from "../server";
@@ -34,20 +33,24 @@ export const updateUserAndCache = async (
     return user;
 };
 
-export const sendUserResponse = (user: IUser) => ({
-    telegramId: user.telegramId,
-    username: user.username,
-    stones: user.stones,
-    energy: user.energy,
-    boosts: user.boosts,
-    skins: user.skins,
-    tasksCompleted: user.tasksCompleted,
-    league: user.league,
-    referralCode: user.referralCode,
-    energyRegenRate: user.energyRegenRate,
-    stonesPerClick: user.stonesPerClick,
-    autoStonesPerSecond: user.autoStonesPerSecond,
-    maxEnergy: user.maxEnergy,
-    lastAutoBotUpdate: user.lastAutoBotUpdate.toISOString(),
-    referralBonus: user.referralBonus || 0,
-});
+export const sendUserResponse = (user: IUser) => {
+    console.log("[sendUserResponse] User data:", user); // Добавляем лог для отладки
+    return {
+        telegramId: user.telegramId,
+        username: user.username,
+        stones: user.stones,
+        energy: user.energy,
+        boosts: user.boosts,
+        skins: user.skins,
+        tasksCompleted: user.tasksCompleted,
+        league: user.league,
+        referralCode: user.referralCode,
+        energyRegenRate: user.energyRegenRate,
+        stonesPerClick: user.stonesPerClick,
+        autoStonesPerSecond: user.autoStonesPerSecond,
+        maxEnergy: user.maxEnergy,
+        lastAutoBotUpdate: user.lastAutoBotUpdate.toISOString(),
+        referralBonus: user.referralBonus || 0,
+        airdropProgress: user.airdropProgress, // Добавляем поле
+    };
+};
