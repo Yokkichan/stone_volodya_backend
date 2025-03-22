@@ -1,4 +1,3 @@
-// src/server.ts
 import express from "express";
 import mongoose from "mongoose";
 import { createServer } from "http";
@@ -11,6 +10,7 @@ import gameRoutes from "./routes/game";
 import leaderboardRoutes from "./routes/leaderboard";
 import airdropRoutes from "./routes/airdrop";
 import referralRoutes from "./routes/referral";
+import earnRoutes from "./routes/earn"; // Добавляем роуты для Earn
 import "./bot";
 import { getLeagueByStones, updateUserAndCache } from "./utils/userUtils";
 
@@ -40,6 +40,7 @@ app.use("/api/game", gameRoutes);
 app.use("/api/leaderboard", leaderboardRoutes);
 app.use("/api/airdrop", airdropRoutes);
 app.use("/api/referral", referralRoutes);
+app.use("/api/earn", earnRoutes); // Подключаем роуты для Earn
 
 io.on("connection", (socket) => {
     console.log("User connected:", socket.id);

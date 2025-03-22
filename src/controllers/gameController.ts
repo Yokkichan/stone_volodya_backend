@@ -1,4 +1,3 @@
-// src/controllers/gameController.ts
 import { Request, Response } from "express";
 import { Document } from "mongoose";
 import User, { IUser, IBoost } from "../models/User";
@@ -14,8 +13,16 @@ export const updateBalance = async (req: Request, res: Response) => {
 
     try {
         let user = (await User.findOne({ telegramId })) || new User({ telegramId, username: "Player_" + telegramId, stones: 0, energy: 1000, referralCode: "code_" + telegramId });
+
+        // Восстановление энергии (1 единица в секунду)
+        const now = new Date();
+        const timeDiff = Math.floor((now.getTime() - user.lastEnergyUpdate.getTime()) / 1000); // секунды
+        const energyToAdd = timeDiff * user.energyRegenRate; // энергия восстанавливается раз в секунду
+        user.energy = Math.min(user.maxEnergy, user.energy + energyToAdd);
+        user.lastEnergyUpdate = now;
+
         user.stones += stones;
-        if (useEnergy) user.energy = (user.energy || 1000) - 1;
+        if (useEnergy && user.energy > 0) user.energy -= 1; // Уменьшаем только если есть энергия
 
         if (user.referredBy) {
             const referrer = (await User.findOne({ telegramId: user.referredBy })) as UserDocument | null;
@@ -28,6 +35,12 @@ export const updateBalance = async (req: Request, res: Response) => {
                         referrer.stones += bonus;
                         referrer.referralBonus = (referrer.referralBonus || 0) + bonus;
                         friendEntry.lastReferralStones = user.stones;
+
+                        // Восстановление энергии для реферера
+                        const referrerTimeDiff = Math.floor((now.getTime() - referrer.lastEnergyUpdate.getTime()) / 1000);
+                        referrer.energy = Math.min(referrer.maxEnergy, referrer.energy + referrerTimeDiff * referrer.energyRegenRate);
+                        referrer.lastEnergyUpdate = now;
+
                         await updateUserAndCache(referrer, userCache);
                     }
                 }
@@ -51,11 +64,17 @@ export const applyBoost = async (req: Request, res: Response) => {
         const user = (await User.findOne({ telegramId })) as UserDocument | null;
         if (!user) return res.status(404).json({ error: "User not found" });
 
+        // Восстановление энергии перед применением буста
+        const now = new Date();
+        const timeDiff = Math.floor((now.getTime() - user.lastEnergyUpdate.getTime()) / 1000);
+        user.energy = Math.min(user.maxEnergy, user.energy + timeDiff * user.energyRegenRate);
+        user.lastEnergyUpdate = now;
+
         let boost = user.boosts.find((b) => b.name === boostName);
         if (!boost) {
             const newBoost: IBoost = { name: boostName, level: 0, count: boostName === "Turbo" || boostName === "Refills" ? 3 : 0 };
             user.boosts.push(newBoost);
-            boost = user.boosts[user.boosts.length - 1]; // Получаем добавленный буст
+            boost = user.boosts[user.boosts.length - 1];
         }
 
         if (boost.name === "Turbo" || boost.name === "Refills") {
@@ -65,7 +84,7 @@ export const applyBoost = async (req: Request, res: Response) => {
                 const multiTapLevel = user.boosts.find((b) => b.name === "MultiTap")?.level || 0;
                 user.stones += Math.floor(500 * (1 + multiTapLevel * 0.5));
             } else {
-                user.energy = user.maxEnergy || 1000;
+                user.energy = user.maxEnergy;
             }
         } else {
             const levelCosts = [10, 100, 150, 250, 500, 1000, 2000, 5000, 10000, 20000, 50000, 100000, 250000, 500000, 1000000];
@@ -110,6 +129,13 @@ export const buySkin = async (req: Request, res: Response) => {
     try {
         const user = (await User.findOne({ telegramId })) as UserDocument | null;
         if (!user) return res.status(404).json({ error: "User not found" });
+
+        // Восстановление энергии
+        const now = new Date();
+        const timeDiff = Math.floor((now.getTime() - user.lastEnergyUpdate.getTime()) / 1000);
+        user.energy = Math.min(user.maxEnergy, user.energy + timeDiff * user.energyRegenRate);
+        user.lastEnergyUpdate = now;
+
         if (user.skins.includes(skinName)) return res.status(400).json({ error: "Skin already owned" });
 
         const cost = 1000;
@@ -135,6 +161,13 @@ export const completeTask = async (req: Request, res: Response) => {
     try {
         const user = (await User.findOne({ telegramId })) as UserDocument | null;
         if (!user) return res.status(404).json({ error: "User not found" });
+
+        // Восстановление энергии
+        const now = new Date();
+        const timeDiff = Math.floor((now.getTime() - user.lastEnergyUpdate.getTime()) / 1000);
+        user.energy = Math.min(user.maxEnergy, user.energy + timeDiff * user.energyRegenRate);
+        user.lastEnergyUpdate = now;
+
         if (user.tasksCompleted.includes(taskName)) return res.status(400).json({ error: "Task already completed" });
 
         user.tasksCompleted.push(taskName);

@@ -1,4 +1,3 @@
-// src/models/User.ts
 import mongoose, { Schema } from "mongoose";
 
 export interface IBoost {
@@ -36,6 +35,7 @@ export interface IUser {
     isPremium: boolean;
     referralBonusClaimed: boolean;
     referralBonus: number;
+    lastEnergyUpdate: Date; // Добавлено для восстановления энергии
 }
 
 const userSchema = new Schema<IUser>({
@@ -69,6 +69,7 @@ const userSchema = new Schema<IUser>({
     isPremium: { type: Boolean, default: false },
     referralBonusClaimed: { type: Boolean, default: false },
     referralBonus: { type: Number, default: 0 },
+    lastEnergyUpdate: { type: Date, default: Date.now }, // Добавлено
 });
 
 export default mongoose.model<IUser>("User", userSchema);
