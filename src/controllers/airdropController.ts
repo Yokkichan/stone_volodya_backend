@@ -9,7 +9,7 @@ interface AuthRequest extends Request {
     user?: { telegramId: string };
 }
 
-const AIRDROP_AMOUNT = 50;
+const AIRDROP_AMOUNT = 10000;
 const AIRDROP_REQUIRED_PROGRESS = 500_000; // Из AIRDROP_CONFIG.REQUIRED_STONES
 const airdropLocks: { [telegramId: string]: boolean } = {};
 

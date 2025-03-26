@@ -24,7 +24,7 @@
 │   │   └── user.ts
 │   │
 │   ├── scripts/
-│   │   ├── migrate.ts
+│   │   ├── resetBoostsMigration.ts
 │   │   └── seedUsers.ts
 │   │
 │   ├── utils/

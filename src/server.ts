@@ -54,7 +54,7 @@ io.on("connection", (socket) => {
 
         const user = await mongoose.model("User").findOne({ telegramId });
         if (user) {
-            console.log(`User logged in: ${user.username}`); // Лог ника при входе
+            console.log(`User logged in: ${user.username}`);
             const cachedUser = userCache.get(telegramId) || {
                 stones: user.stones,
                 autoStonesPerSecond: user.autoStonesPerSecond,
@@ -65,7 +65,8 @@ io.on("connection", (socket) => {
             const now = new Date();
             const timeDiff = Math.floor((now.getTime() - cachedUser.lastAutoBotUpdate.getTime()) / 1000);
             if (cachedUser.autoStonesPerSecond > 0 && timeDiff > 0) {
-                const offlineStones = Math.floor(cachedUser.autoStonesPerSecond * timeDiff);
+                const boostMultiplier = user.boostActiveUntil && now < user.boostActiveUntil ? 2 : 1;
+                const offlineStones = Math.min(Math.floor(cachedUser.autoStonesPerSecond * timeDiff * boostMultiplier), 25000 - (user.stones - cachedUser.stones));
                 cachedUser.stones += offlineStones;
                 cachedUser.lastAutoBotUpdate = now;
                 user.stones = cachedUser.stones;
@@ -112,13 +113,14 @@ setInterval(async () => {
         if (cachedUser.autoStonesPerSecond > 0) {
             const timeDiff = Math.floor((now.getTime() - cachedUser.lastAutoBotUpdate.getTime()) / 1000);
             if (timeDiff > 0) {
-                const newStones = Math.floor(cachedUser.autoStonesPerSecond * timeDiff);
-                cachedUser.stones += newStones;
-                cachedUser.lastAutoBotUpdate = now;
-                userCache.set(telegramId, cachedUser);
-
                 const user = await mongoose.model("User").findOne({ telegramId });
                 if (user) {
+                    const boostMultiplier = user.boostActiveUntil && now < user.boostActiveUntil ? 2 : 1;
+                    const newStones = Math.min(Math.floor(cachedUser.autoStonesPerSecond * timeDiff * boostMultiplier), 25000 - (user.stones - cachedUser.stones));
+                    cachedUser.stones += newStones;
+                    cachedUser.lastAutoBotUpdate = now;
+                    userCache.set(telegramId, cachedUser);
+
                     user.stones = cachedUser.stones;
                     user.lastAutoBotUpdate = now;
                     await user.save();
@@ -129,17 +131,52 @@ setInterval(async () => {
     }
 }, 1000);
 
+// Обновление всех пользователей каждые 30 минут
+setInterval(async () => {
+    const now = new Date();
+    console.log("[Background Update] Starting leaderboard and league update for all users...");
+
+    const users = await mongoose.model("User").find({});
+    for (const user of users) {
+        const timeDiff = Math.floor((now.getTime() - user.lastAutoBotUpdate.getTime()) / 1000);
+        if (user.autoStonesPerSecond > 0 && timeDiff > 0) {
+            const boostMultiplier = user.boostActiveUntil && now < user.boostActiveUntil ? 2 : 1;
+            const newStones = Math.min(Math.floor(user.autoStonesPerSecond * timeDiff * boostMultiplier), 25000);
+            user.stones += newStones;
+            user.lastAutoBotUpdate = now;
+
+            if (user.referredBy) {
+                const referrer = await mongoose.model("User").findOne({ referralCode: user.referredBy });
+                if (referrer) {
+                    const bonus = Math.floor(newStones * 0.05);
+                    referrer.stones += bonus;
+                    referrer.referralBonus = (referrer.referralBonus || 0) + bonus;
+                    await referrer.save();
+                }
+            }
+        }
+        user.league = getLeagueByStones(user.stones);
+        await user.save();
+    }
+
+    console.log("[Background Update] Leaderboard and leagues updated for all users.");
+}, 30 * 60 * 1000);
+
 // Лог количества онлайн-пользователей каждые 30 минут
 setInterval(() => {
     const onlineCount = activeConnections.size;
     console.log(`Online users: ${onlineCount}`);
-}, 30 * 60 * 1000); // 30 минут в миллисекундах
+}, 30 * 60 * 1000);
 
 const start = async () => {
     try {
         await mongoose.connect(process.env.MONGO_URI!);
-        server.listen(process.env.PORT || 3000, () => {});
-    } catch (error) {}
+        server.listen(process.env.PORT || 3000, () => {
+            console.log(`Server running on port ${process.env.PORT || 3000}`);
+        });
+    } catch (error) {
+        console.error("Failed to start server:", error);
+    }
 };
 
 start();

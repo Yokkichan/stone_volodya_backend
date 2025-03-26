@@ -36,7 +36,10 @@ export interface IUser {
     referralBonusClaimed: boolean;
     referralBonus: number;
     lastEnergyUpdate: Date;
-    airdropProgress: number; // Добавляем прогресс аирдропа
+    airdropProgress: number;
+    refillLastUsed?: Date;       // Добавляем для Refill
+    boostLastUsed?: Date;        // Добавляем для Boost
+    boostActiveUntil?: Date;     // Время окончания Boost (1 минута)
 }
 
 const userSchema = new Schema<IUser>({
@@ -71,7 +74,10 @@ const userSchema = new Schema<IUser>({
     referralBonusClaimed: { type: Boolean, default: false },
     referralBonus: { type: Number, default: 0 },
     lastEnergyUpdate: { type: Date, default: Date.now },
-    airdropProgress: { type: Number, default: 0 }, // Прогресс аирдропа
+    airdropProgress: { type: Number, default: 0 },
+    refillLastUsed: { type: Date },          // Время последнего использования Refill
+    boostLastUsed: { type: Date },           // Время последнего использования Boost
+    boostActiveUntil: { type: Date },        // Время окончания действия Boost
 });
 
 export default mongoose.model<IUser>("User", userSchema);

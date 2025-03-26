@@ -1,4 +1,3 @@
-// src/bot.ts
 import dotenv from "dotenv";
 dotenv.config();
 
@@ -8,8 +7,6 @@ import { generateReferralCode } from "./utils/referralCode";
 import { updateUserAndCache } from "./utils/userUtils";
 import { userCache } from "./server";
 
-console.log("BOT TOKEN:", process.env.TELEGRAM_BOT_TOKEN);
-
 const bot = new Telegraf(process.env.TELEGRAM_BOT_TOKEN!);
 
 bot.start(async (ctx) => {
@@ -18,8 +15,9 @@ bot.start(async (ctx) => {
 
     try {
         let user = await User.findOne({ telegramId });
+        const now = new Date();
+
         if (!user) {
-            // Создаем нового пользователя
             let photoUrl = "";
             try {
                 const photos = await ctx.telegram.getUserProfilePhotos(ctx.from.id, 0, 1);
@@ -42,8 +40,10 @@ bot.start(async (ctx) => {
                 stones: 0,
                 energy: 1000,
                 league: "Pebble",
-                lastAutoBotUpdate: new Date(),
-                lastOnline: new Date(),
+                lastAutoBotUpdate: now,
+                lastOnline: now,
+                refillLastUsed: now, // Инициализируем с возможностью немедленного использования
+                boostLastUsed: now,
             });
 
             if (referralCode) {
@@ -53,19 +53,26 @@ bot.start(async (ctx) => {
                     referrer.invitedFriends.push({ user: user._id, lastReferralStones: 0 });
                     referrer.stones += bonus;
                     referrer.referralBonus = (referrer.referralBonus || 0) + bonus;
-                    user.stones += bonus;
-                    await referrer.save(); // Сохраняем реферера
+                    await referrer.save();
                     await updateUserAndCache(referrer, userCache);
+                    user.stones += bonus;
                 }
             }
-            await updateUserAndCache(user, userCache); // Обновляем кэш нового пользователя
         } else {
-            // Обновляем существующего пользователя, если нужно
             user.username = ctx.from.username || ctx.from.first_name || user.username;
             user.isPremium = !!ctx.from.is_premium;
-            user.lastOnline = new Date();
-            await updateUserAndCache(user, userCache); // Обновляем кэш и базу
+            user.lastOnline = now;
+
+            // Возобновление бустов раз в сутки
+            if (!user.refillLastUsed || (now.getTime() - user.refillLastUsed.getTime()) >= 24 * 60 * 60 * 1000) {
+                user.refillLastUsed = now; // Разрешаем использование Refill
+            }
+            if (!user.boostLastUsed || (now.getTime() - user.boostLastUsed.getTime()) >= 24 * 60 * 60 * 1000) {
+                user.boostLastUsed = now; // Разрешаем использование Boost
+            }
         }
+
+        await updateUserAndCache(user, userCache);
 
         const miniAppUrl = `https://t.me/StoneVolodyaCoinBot/stone_volodya_game?startapp=${user.referralCode}`;
         await ctx.reply("Welcome to Stone Volodya Game! Click the button below to start playing:", {

@@ -1,20 +1,36 @@
 import { Request, Response } from "express";
 import User from "../models/User";
 import axios from "axios";
+import logger from "../logger";
 
-// Функція для завантаження фото з Telegram і конвертації в base64
 const fetchTelegramPhoto = async (photoUrl: string): Promise<string> => {
     try {
-        const botToken = "8199456151:AAEuzGhhlwopw8PcZVgY6foxx8iENtoou7Q"; // Ваш токен бота (зберігайте в .env)
-        const filePath = photoUrl.split("/file/")[1]; // Отримуємо шлях файлу
+        if (!photoUrl || typeof photoUrl !== "string") {
+            return "";
+        }
+
+        const botToken = process.env.TELEGRAM_BOT_TOKEN || "8199456151:AAEuzGhhlwopw8PcZVgY6foxx8iENtoou7Q";
+        let filePath = "";
+
+        if (photoUrl.includes(`/file/bot${botToken}/`)) {
+            filePath = photoUrl.split(`/file/bot${botToken}/`)[1];
+        } else if (photoUrl.includes("/file/")) {
+            filePath = photoUrl.split("/file/")[1];
+        } else {
+            return photoUrl;
+        }
+
+        if (!filePath) {
+            return "";
+        }
+
         const telegramApiUrl = `https://api.telegram.org/file/bot${botToken}/${filePath}`;
 
         const response = await axios.get(telegramApiUrl, { responseType: "arraybuffer" });
         const base64Image = Buffer.from(response.data, "binary").toString("base64");
-        return `data:image/jpeg;base64,${base64Image}`; // Повертаємо зображення у форматі base64
+        return `data:image/jpeg;base64,${base64Image}`;
     } catch (error) {
-        console.error("[fetchTelegramPhoto] Error fetching photo:", error);
-        return ""; // Повертаємо порожній рядок у разі помилки
+        return "";
     }
 };
 
@@ -25,10 +41,11 @@ export const getLeaderboard = async (req: Request, res: Response) => {
         const players = await User.find({ league })
             .sort({ stones: -1 })
             .limit(100)
-            .select("telegramId username stones photo_url isPremium") // Додаємо photo_url і isPremium
-            .lean(); // Використовуємо .lean() для швидшого виконання
+            .select("telegramId username stones photo_url isPremium")
+            .lean();
 
-        // Конвертуємо photo_url у base64 для кожного гравця
+        logger.info(`Fetched ${players.length} players for league: ${league}`);
+
         const playersWithPhotos = await Promise.all(
             players.map(async (player) => {
                 let photoBase64 = "";
@@ -39,7 +56,7 @@ export const getLeaderboard = async (req: Request, res: Response) => {
                     telegramId: player.telegramId,
                     username: player.username,
                     stones: player.stones,
-                    photo_url: photoBase64 || player.photo_url, // Якщо base64 не вдалося отримати, повертаємо оригінальний URL
+                    photo_url: photoBase64 || player.photo_url,
                     isPremium: player.isPremium || false,
                 };
             })
@@ -47,7 +64,7 @@ export const getLeaderboard = async (req: Request, res: Response) => {
 
         res.json(playersWithPhotos);
     } catch (error) {
-        console.error("[getLeaderboard] Error:", error);
+        logger.error(`Error in getLeaderboard: ${error instanceof Error ? error.message : String(error)}`);
         res.status(500).json({ message: "Error fetching leaderboard" });
     }
 };
