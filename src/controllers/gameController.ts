@@ -43,7 +43,7 @@ export const getBoostBonus = (boostName: BoostName, level: number): string => {
 
 // Обновление баланса пользователя
 export const updateBalance = async (req: Request, res: Response) => {
-    const { telegramId, stones, energy } = req.body;
+    const { telegramId, stones, energy, isAutobot = false } = req.body; // Added isAutobot flag (optional)
     if (!telegramId) return res.status(400).json({ error: "telegramId is required" });
 
     try {
@@ -58,16 +58,15 @@ export const updateBalance = async (req: Request, res: Response) => {
         };
         const now = new Date();
 
-        // Проверка действия Boost
         let boostMultiplier = 1;
         if (user.boostActiveUntil && now < user.boostActiveUntil) {
-            boostMultiplier = 2; // Удвоение тапов и автотапов
+            boostMultiplier = 2;
         }
 
-        // Автобот: начисление камней
+        // Autobot: Handle passive stone generation (no energy cost, no limit)
         const timeDiff = Math.floor((now.getTime() - user.lastAutoBotUpdate.getTime()) / 1000);
         if (user.autoStonesPerSecond > 0 && timeDiff > 0) {
-            const stonesEarned = Math.min(Math.floor(user.autoStonesPerSecond * timeDiff * boostMultiplier), 25000 - (user.stones - cachedUser.stones));
+            const stonesEarned = Math.floor(user.autoStonesPerSecond * timeDiff * boostMultiplier); // No limit
             cachedUser.stones += stonesEarned;
 
             if (user.referredBy) {
@@ -83,15 +82,25 @@ export const updateBalance = async (req: Request, res: Response) => {
             user.lastAutoBotUpdate = now;
         }
 
-        // Восстановление энергии
+        // Energy regeneration
         const energyTimeDiff = Math.floor((now.getTime() - user.lastEnergyUpdate.getTime()) / 1000);
         user.energy = Math.min(user.maxEnergy, user.energy + energyTimeDiff * user.energyRegenRate);
         user.lastEnergyUpdate = now;
 
-        // Ручное обновление камней и энергии
+        // Handle incoming stones (distinguish autobot vs manual taps)
         if (typeof stones === "number" && stones > 0) {
             const stonesEarned = stones * boostMultiplier;
-            cachedUser.stones += stonesEarned;
+            if (isAutobot) {
+                // Autobot update: Add stones without energy cost
+                cachedUser.stones += stonesEarned;
+            } else {
+                // Manual tap: Check energy and deduct 1 unit
+                if (user.energy < 1) {
+                    return res.status(400).json({ error: "Not enough energy" });
+                }
+                cachedUser.stones += stonesEarned;
+                user.energy -= 1; // 1 energy per manual tap
+            }
 
             if (user.referredBy) {
                 const referrer = await User.findOne({ referralCode: user.referredBy });
@@ -103,8 +112,9 @@ export const updateBalance = async (req: Request, res: Response) => {
                     updateUserAndCache(referrer, userCache);
                 }
             }
-            user.energy = Math.max(0, user.energy - user.stonesPerClick);
         }
+
+        // Direct energy update (if provided)
         if (typeof energy === "number") {
             user.energy = Math.max(0, energy);
         }

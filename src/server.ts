@@ -37,6 +37,11 @@ app.use("/api/airdrop", airdropRoutes);
 app.use("/api/referral", referralRoutes);
 app.use("/api/earn", earnRoutes);
 
+// Тестовый маршрут для проверки
+app.get("/", (req, res) => {
+    res.send("Server is running!");
+});
+
 io.on("connection", (socket) => {
     let hasJoined = false;
 
@@ -66,7 +71,7 @@ io.on("connection", (socket) => {
             const timeDiff = Math.floor((now.getTime() - cachedUser.lastAutoBotUpdate.getTime()) / 1000);
             if (cachedUser.autoStonesPerSecond > 0 && timeDiff > 0) {
                 const boostMultiplier = user.boostActiveUntil && now < user.boostActiveUntil ? 2 : 1;
-                const offlineStones = Math.min(Math.floor(cachedUser.autoStonesPerSecond * timeDiff * boostMultiplier), 25000 - (user.stones - cachedUser.stones));
+                const offlineStones = Math.floor(cachedUser.autoStonesPerSecond * timeDiff * boostMultiplier);
                 cachedUser.stones += offlineStones;
                 cachedUser.lastAutoBotUpdate = now;
                 user.stones = cachedUser.stones;
@@ -116,7 +121,7 @@ setInterval(async () => {
                 const user = await mongoose.model("User").findOne({ telegramId });
                 if (user) {
                     const boostMultiplier = user.boostActiveUntil && now < user.boostActiveUntil ? 2 : 1;
-                    const newStones = Math.min(Math.floor(cachedUser.autoStonesPerSecond * timeDiff * boostMultiplier), 25000 - (user.stones - cachedUser.stones));
+                    const newStones = Math.floor(cachedUser.autoStonesPerSecond * timeDiff * boostMultiplier);
                     cachedUser.stones += newStones;
                     cachedUser.lastAutoBotUpdate = now;
                     userCache.set(telegramId, cachedUser);
@@ -141,7 +146,7 @@ setInterval(async () => {
         const timeDiff = Math.floor((now.getTime() - user.lastAutoBotUpdate.getTime()) / 1000);
         if (user.autoStonesPerSecond > 0 && timeDiff > 0) {
             const boostMultiplier = user.boostActiveUntil && now < user.boostActiveUntil ? 2 : 1;
-            const newStones = Math.min(Math.floor(user.autoStonesPerSecond * timeDiff * boostMultiplier), 25000);
+            const newStones = Math.floor(user.autoStonesPerSecond * timeDiff * boostMultiplier);
             user.stones += newStones;
             user.lastAutoBotUpdate = now;
 
@@ -170,12 +175,15 @@ setInterval(() => {
 
 const start = async () => {
     try {
+        console.log("Attempting to connect to MongoDB:", process.env.MONGO_URI);
         await mongoose.connect(process.env.MONGO_URI!);
+        console.log("Connected to MongoDB");
         server.listen(process.env.PORT || 3000, () => {
             console.log(`Server running on port ${process.env.PORT || 3000}`);
         });
     } catch (error) {
         console.error("Failed to start server:", error);
+        process.exit(1);
     }
 };
 
