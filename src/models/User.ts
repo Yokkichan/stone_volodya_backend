@@ -1,17 +1,27 @@
 import mongoose, { Schema } from "mongoose";
 
+/**
+ * Интерфейс для буста пользователя.
+ */
 export interface IBoost {
     name: string;
     level: number;
     count?: number;
 }
 
+/**
+ * Интерфейс для данных о приглашенных друзьях (рефералах).
+ */
 export interface IInvitedFriend {
     user: mongoose.Types.ObjectId;
     lastReferralStones: number;
 }
 
+/**
+ * Интерфейс для модели пользователя.
+ */
 export interface IUser {
+    _id: mongoose.Types.ObjectId;  // Теперь не опционально, так как всегда есть в Mongoose
     telegramId: string;
     username: string;
     photo_url: string;
@@ -37,11 +47,14 @@ export interface IUser {
     referralBonus: number;
     lastEnergyUpdate: Date;
     airdropProgress: number;
-    refillLastUsed?: Date;       // Добавляем для Refill
-    boostLastUsed?: Date;        // Добавляем для Boost
-    boostActiveUntil?: Date;     // Время окончания Boost (1 минута)
+    refillLastUsed?: Date;
+    boostLastUsed?: Date;
+    boostActiveUntil?: Date;
 }
 
+/**
+ * Схема пользователя для Mongoose.
+ */
 const userSchema = new Schema<IUser>({
     telegramId: { type: String, required: true, unique: true },
     username: { type: String, required: true },
@@ -75,9 +88,9 @@ const userSchema = new Schema<IUser>({
     referralBonus: { type: Number, default: 0 },
     lastEnergyUpdate: { type: Date, default: Date.now },
     airdropProgress: { type: Number, default: 0 },
-    refillLastUsed: { type: Date },          // Время последнего использования Refill
-    boostLastUsed: { type: Date },           // Время последнего использования Boost
-    boostActiveUntil: { type: Date },        // Время окончания действия Boost
+    refillLastUsed: { type: Date },
+    boostLastUsed: { type: Date },
+    boostActiveUntil: { type: Date },
 });
 
 export default mongoose.model<IUser>("User", userSchema);

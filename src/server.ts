@@ -11,6 +11,7 @@ import leaderboardRoutes from "./routes/leaderboard";
 import airdropRoutes from "./routes/airdrop";
 import referralRoutes from "./routes/referral";
 import earnRoutes from "./routes/earn";
+import User, { IInvitedFriend } from "./models/User"; // Добавляем импорт User и IInvitedFriend
 import "./bot";
 import { getLeagueByStones, updateUserAndCache, sendUserResponse } from "./utils/userUtils";
 
@@ -26,6 +27,7 @@ export const io = new Server(server, {
 
 export const userCache = new Map<string, { stones: number; autoStonesPerSecond: number; lastAutoBotUpdate: Date; league: string }>();
 const activeConnections = new Map<string, string>();
+const leaderboardCache = new Map<string, any[]>();
 
 app.use(cors());
 app.use(express.json());
@@ -37,7 +39,6 @@ app.use("/api/airdrop", airdropRoutes);
 app.use("/api/referral", referralRoutes);
 app.use("/api/earn", earnRoutes);
 
-// Тестовый маршрут для проверки
 app.get("/", (req, res) => {
     res.send("Server is running!");
 });
@@ -57,42 +58,28 @@ io.on("connection", (socket) => {
         activeConnections.set(telegramId, socket.id);
         socket.join(telegramId);
 
-        const user = await mongoose.model("User").findOne({ telegramId });
+        const user = await User.findOne({ telegramId }); // Используем импортированный User
         if (user) {
             console.log(`User logged in: ${user.username}`);
-            const cachedUser = userCache.get(telegramId) || {
-                stones: user.stones,
-                autoStonesPerSecond: user.autoStonesPerSecond,
-                lastAutoBotUpdate: user.lastAutoBotUpdate,
-                league: user.league,
-            };
-
-            const now = new Date();
-            const timeDiff = Math.floor((now.getTime() - cachedUser.lastAutoBotUpdate.getTime()) / 1000);
-            if (cachedUser.autoStonesPerSecond > 0 && timeDiff > 0) {
-                const boostMultiplier = user.boostActiveUntil && now < user.boostActiveUntil ? 2 : 1;
-                const offlineStones = Math.floor(cachedUser.autoStonesPerSecond * timeDiff * boostMultiplier);
-                cachedUser.stones += offlineStones;
-                cachedUser.lastAutoBotUpdate = now;
-                user.stones = cachedUser.stones;
-                user.lastAutoBotUpdate = now;
-                await user.save();
-            }
-
             await updateUserAndCache(user, userCache);
             io.to(telegramId).emit("userUpdate", sendUserResponse(user));
         }
     });
 
     socket.on("getLeaderboard", async ({ league }) => {
-        const players = await mongoose.model("User").find({ league }).sort({ stones: -1 }).limit(100).select("telegramId username stones");
-        socket.emit("leaderboard", players);
+        if (leaderboardCache.has(league)) {
+            socket.emit("leaderboard", leaderboardCache.get(league));
+        } else {
+            const players = await User.find({ league }).sort({ stones: -1 }).limit(100).select("telegramId username stones"); // Используем User
+            leaderboardCache.set(league, players);
+            socket.emit("leaderboard", players);
+        }
     });
 
     socket.on("disconnect", async () => {
         for (const [telegramId, socketId] of activeConnections.entries()) {
             if (socketId === socket.id) {
-                const user = await mongoose.model("User").findOne({ telegramId });
+                const user = await User.findOne({ telegramId }); // Используем User
                 if (user) {
                     const cachedUser = userCache.get(telegramId);
                     if (cachedUser) {
@@ -111,63 +98,62 @@ io.on("connection", (socket) => {
     });
 });
 
-// Обновление автобота каждую секунду для активных пользователей
+// Обновление лидерборда каждые 5 минут
 setInterval(async () => {
-    const now = new Date();
-    for (const [telegramId, cachedUser] of userCache.entries()) {
-        if (cachedUser.autoStonesPerSecond > 0) {
-            const timeDiff = Math.floor((now.getTime() - cachedUser.lastAutoBotUpdate.getTime()) / 1000);
-            if (timeDiff > 0) {
-                const user = await mongoose.model("User").findOne({ telegramId });
-                if (user) {
-                    const boostMultiplier = user.boostActiveUntil && now < user.boostActiveUntil ? 2 : 1;
-                    const newStones = Math.floor(cachedUser.autoStonesPerSecond * timeDiff * boostMultiplier);
-                    cachedUser.stones += newStones;
-                    cachedUser.lastAutoBotUpdate = now;
-                    userCache.set(telegramId, cachedUser);
+    const leagues = ["Pebble", "Gravel", "Cobblestone", "Boulder", "Quartz", "Granite", "Obsidian", "Marble", "Bedrock"];
+    for (const league of leagues) {
+        const players = await User.find({ league }).sort({ stones: -1 }).limit(100).select("telegramId username stones"); // Используем User
+        leaderboardCache.set(league, players);
+    }
+    console.log("[Leaderboard Update] Cached leaderboards refreshed.");
+}, 5 * 60 * 1000);
 
-                    user.stones = cachedUser.stones;
-                    user.lastAutoBotUpdate = now;
-                    await user.save();
-                    io.to(telegramId).emit("userUpdate", sendUserResponse(user));
+// Фоновая обработка всех пользователей (раз в 30 минут) с батчами
+const updateAllUsers = async () => {
+    const now = new Date();
+    console.log("[Background Update] Starting user update...");
+
+    const batchSize = 100;
+    const users = await User.find({}); // Используем User
+    for (let i = 0; i < users.length; i += batchSize) {
+        const batch = users.slice(i, i + batchSize);
+        await Promise.all(batch.map(async (user) => {
+            const timeDiff = Math.floor((now.getTime() - user.lastAutoBotUpdate.getTime()) / 1000);
+            if (user.autoStonesPerSecond > 0 && timeDiff > 0) {
+                const boostMultiplier = user.boostActiveUntil && now < user.boostActiveUntil ? 2 : 1;
+                const newStones = Math.floor(user.autoStonesPerSecond * timeDiff * boostMultiplier);
+                user.stones += newStones;
+                user.lastAutoBotUpdate = now;
+
+                if (user.referredBy) {
+                    const referrer = await User.findOne({ referralCode: user.referredBy }); // Используем User
+                    if (referrer) {
+                        const bonus = Math.floor(newStones * 0.05);
+                        referrer.stones += bonus;
+                        referrer.referralBonus = (referrer.referralBonus || 0) + bonus;
+
+                        const invitedFriend = referrer.invitedFriends.find((f: IInvitedFriend) => f.user.toString() === user._id.toString());
+                        if (!invitedFriend) {
+                            referrer.invitedFriends.push({ user: user._id, lastReferralStones: bonus });
+                        } else {
+                            invitedFriend.lastReferralStones += bonus;
+                        }
+                        await referrer.save();
+                        io.to(referrer.telegramId).emit("userUpdate", sendUserResponse(referrer));
+                    }
                 }
             }
-        }
+            user.league = getLeagueByStones(user.stones);
+            await user.save();
+        }));
     }
-}, 1000);
+    console.log("[Background Update] All users updated.");
+};
 
-// Обновление всех пользователей каждые 30 минут
-setInterval(async () => {
-    const now = new Date();
-    console.log("[Background Update] Starting leaderboard and league update for all users...");
+// Запуск фонового обновления каждые 30 минут
+setInterval(updateAllUsers, 30 * 60 * 1000);
 
-    const users = await mongoose.model("User").find({});
-    for (const user of users) {
-        const timeDiff = Math.floor((now.getTime() - user.lastAutoBotUpdate.getTime()) / 1000);
-        if (user.autoStonesPerSecond > 0 && timeDiff > 0) {
-            const boostMultiplier = user.boostActiveUntil && now < user.boostActiveUntil ? 2 : 1;
-            const newStones = Math.floor(user.autoStonesPerSecond * timeDiff * boostMultiplier);
-            user.stones += newStones;
-            user.lastAutoBotUpdate = now;
-
-            if (user.referredBy) {
-                const referrer = await mongoose.model("User").findOne({ referralCode: user.referredBy });
-                if (referrer) {
-                    const bonus = Math.floor(newStones * 0.05);
-                    referrer.stones += bonus;
-                    referrer.referralBonus = (referrer.referralBonus || 0) + bonus;
-                    await referrer.save();
-                }
-            }
-        }
-        user.league = getLeagueByStones(user.stones);
-        await user.save();
-    }
-
-    console.log("[Background Update] Leaderboard and leagues updated for all users.");
-}, 30 * 60 * 1000);
-
-// Лог количества онлайн-пользователей каждые 30 минут
+// Лог онлайна каждые 30 минут
 setInterval(() => {
     const onlineCount = activeConnections.size;
     console.log(`Online users: ${onlineCount}`);
@@ -183,7 +169,6 @@ const start = async () => {
         });
     } catch (error) {
         console.error("Failed to start server:", error);
-        process.exit(1);
     }
 };
 

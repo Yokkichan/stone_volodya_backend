@@ -1,6 +1,6 @@
 import { Request, Response } from "express";
 import { Document } from "mongoose";
-import User, { IUser, IBoost } from "../models/User";
+import User, {IUser, IBoost, IInvitedFriend} from "../models/User";
 import { io, userCache } from "../server";
 import { updateUserAndCache, sendUserResponse } from "../utils/userUtils";
 
@@ -43,11 +43,11 @@ export const getBoostBonus = (boostName: BoostName, level: number): string => {
 
 // Обновление баланса пользователя
 export const updateBalance = async (req: Request, res: Response) => {
-    const { telegramId, stones, energy, isAutobot = false } = req.body; // Added isAutobot flag (optional)
+    const { telegramId, stones, energy, isAutobot = false } = req.body;
     if (!telegramId) return res.status(400).json({ error: "telegramId is required" });
 
     try {
-        const user = (await User.findOne({ telegramId })) as UserDocument | null;
+        const user = await User.findOne({ telegramId }) as UserDocument | null;
         if (!user) return res.status(404).json({ error: "User not found" });
 
         const cachedUser = userCache.get(telegramId) || {
@@ -63,20 +63,30 @@ export const updateBalance = async (req: Request, res: Response) => {
             boostMultiplier = 2;
         }
 
-        // Autobot: Handle passive stone generation (no energy cost, no limit)
+        // Autobot: Handle passive stone generation
         const timeDiff = Math.floor((now.getTime() - user.lastAutoBotUpdate.getTime()) / 1000);
         if (user.autoStonesPerSecond > 0 && timeDiff > 0) {
-            const stonesEarned = Math.floor(user.autoStonesPerSecond * timeDiff * boostMultiplier); // No limit
+            const stonesEarned = Math.floor(user.autoStonesPerSecond * timeDiff * boostMultiplier);
             cachedUser.stones += stonesEarned;
 
             if (user.referredBy) {
-                const referrer = await User.findOne({ referralCode: user.referredBy });
+                const referrer = await User.findOne({ referralCode: user.referredBy }) as UserDocument | null;
                 if (referrer) {
                     const bonus = Math.floor(stonesEarned * 0.05);
                     referrer.stones += bonus;
                     referrer.referralBonus = (referrer.referralBonus || 0) + bonus;
+
+                    const invitedFriend = referrer.invitedFriends.find(
+                        (f: IInvitedFriend) => f.user.toString() === user._id.toString()
+                    );
+                    if (!invitedFriend) {
+                        referrer.invitedFriends.push({ user: user._id, lastReferralStones: bonus });
+                    } else {
+                        invitedFriend.lastReferralStones += bonus;
+                    }
                     await referrer.save();
-                    updateUserAndCache(referrer, userCache);
+                    await updateUserAndCache(referrer, userCache);
+                    io.to(referrer.telegramId).emit("userUpdate", sendUserResponse(referrer));
                 }
             }
             user.lastAutoBotUpdate = now;
@@ -87,34 +97,41 @@ export const updateBalance = async (req: Request, res: Response) => {
         user.energy = Math.min(user.maxEnergy, user.energy + energyTimeDiff * user.energyRegenRate);
         user.lastEnergyUpdate = now;
 
-        // Handle incoming stones (distinguish autobot vs manual taps)
+        // Handle incoming stones
         if (typeof stones === "number" && stones > 0) {
             const stonesEarned = stones * boostMultiplier;
             if (isAutobot) {
-                // Autobot update: Add stones without energy cost
                 cachedUser.stones += stonesEarned;
             } else {
-                // Manual tap: Check energy and deduct 1 unit
                 if (user.energy < 1) {
                     return res.status(400).json({ error: "Not enough energy" });
                 }
                 cachedUser.stones += stonesEarned;
-                user.energy -= 1; // 1 energy per manual tap
+                user.energy -= 1;
             }
 
             if (user.referredBy) {
-                const referrer = await User.findOne({ referralCode: user.referredBy });
+                const referrer = await User.findOne({ referralCode: user.referredBy }) as UserDocument | null;
                 if (referrer) {
                     const bonus = Math.floor(stonesEarned * 0.05);
                     referrer.stones += bonus;
                     referrer.referralBonus = (referrer.referralBonus || 0) + bonus;
+
+                    const invitedFriend = referrer.invitedFriends.find(
+                        (f: IInvitedFriend) => f.user.toString() === user._id.toString()
+                    );
+                    if (!invitedFriend) {
+                        referrer.invitedFriends.push({ user: user._id, lastReferralStones: bonus });
+                    } else {
+                        invitedFriend.lastReferralStones += bonus;
+                    }
                     await referrer.save();
-                    updateUserAndCache(referrer, userCache);
+                    await updateUserAndCache(referrer, userCache);
+                    io.to(referrer.telegramId).emit("userUpdate", sendUserResponse(referrer));
                 }
             }
         }
 
-        // Direct energy update (if provided)
         if (typeof energy === "number") {
             user.energy = Math.max(0, energy);
         }
@@ -125,10 +142,10 @@ export const updateBalance = async (req: Request, res: Response) => {
         res.json(response);
         io.to(telegramId).emit("userUpdate", response);
     } catch (error) {
+        console.error("[updateBalance] Error:", error);
         res.status(500).json({ error: "Internal server error" });
     }
 };
-
 // Применение платного буста
 export const applyBoost = async (req: Request, res: Response) => {
     const { telegramId, boostName } = req.body;
