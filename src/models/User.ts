@@ -50,6 +50,7 @@ export interface IUser {
     refillLastUsed?: Date;
     boostLastUsed?: Date;
     boostActiveUntil?: Date;
+    lastClickTime?: Date;
 }
 
 /**
@@ -91,6 +92,7 @@ const userSchema = new Schema<IUser>({
     refillLastUsed: { type: Date },
     boostLastUsed: { type: Date },
     boostActiveUntil: { type: Date },
+    lastClickTime: { type: Date, default: null },
 });
 
 export default mongoose.model<IUser>("User", userSchema);
