@@ -47,7 +47,7 @@ app.get("/", (req, res) => {
 // Функция для получения photo_url через Telegram API
 const fetchTelegramPhoto = async (telegramId: string): Promise<string> => {
     try {
-        const botToken = process.env.TELEGRAM_BOT_TOKEN || "8199456151:AAEuzGhhlwopw8PcZVgY6foxx8iENtoou7Q";
+        const botToken = process.env.TELEGRAM_BOT_TOKEN;
         const profilePhotosResponse = await axios.get(`https://api.telegram.org/bot${botToken}/getUserProfilePhotos`, {
             params: { user_id: telegramId, limit: 1 },
         });

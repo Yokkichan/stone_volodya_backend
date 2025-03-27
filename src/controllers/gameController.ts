@@ -32,7 +32,7 @@ export const getBoostBonus = (boostName: BoostName, level: number): string => {
     const nextLevel = level + 1;
     switch (boostName) {
         case "MultiTap": return `+${2 + 2 * nextLevel} stones/click`;
-        case "AutoBot": return `+${1 + nextLevel} stones/sec (max 25,000/day)`;
+        case "AutoBot": return `+${1 + nextLevel} stones/sec`;
         case "BatteryPack": return `+${1000 + 500 * nextLevel} max energy`;
         case "RechargeSpeed": return `+${1 + nextLevel} energy/sec`;
         case "Refill": return "Full energy refill";

@@ -9,7 +9,7 @@ const fetchTelegramPhoto = async (photoUrl: string): Promise<string> => {
             return "";
         }
 
-        const botToken = process.env.TELEGRAM_BOT_TOKEN || "8199456151:AAEuzGhhlwopw8PcZVgY6foxx8iENtoou7Q";
+        const botToken = process.env.TELEGRAM_BOT_TOKEN;
         let filePath = "";
 
         if (photoUrl.includes(`/file/bot${botToken}/`)) {
